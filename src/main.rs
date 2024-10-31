@@ -1,15 +1,18 @@
 use download_item::DownloadItem;
 use iced::{
     widget::{button, column, row, text_input},
-    Element,
+    Element, Task,
 };
+use log::debug;
 
 mod download_item;
+mod utils;
 
 #[derive(Default)]
 struct AppState {
     download_items: Vec<DownloadItem>,
     url_input: String,
+    content_type: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -17,10 +20,11 @@ enum AppMessage {
     AddUrl,
     EditUrl(String),
     DownloadItem(usize, download_item::DownloadMessage),
+    UrlValidated(Option<String>),
 }
 
 impl AppState {
-    fn update(&mut self, message: AppMessage) {
+    fn update(&mut self, message: AppMessage) -> Task<AppMessage> {
         match message {
             AppMessage::AddUrl => {
                 if !self.url_input.is_empty() {
@@ -28,14 +32,26 @@ impl AppState {
                     self.download_items.push(new_item);
                     self.url_input.clear();
                 }
+                Task::none()
             }
             AppMessage::EditUrl(url) => {
-                self.url_input = url;
+                self.url_input = url.clone();
+                let url_to_validate = url.clone();
+                Task::perform(
+                    async move { utils::get_downloadable_content_type(&url_to_validate).await },
+                    AppMessage::UrlValidated,
+                )
+            }
+            AppMessage::UrlValidated(content_type) => {
+                debug!("Content type: {:?}", content_type);
+                self.content_type = content_type;
+                Task::none()
             }
             AppMessage::DownloadItem(index, download_message) => {
                 if let Some(item) = self.download_items.get_mut(index) {
                     item.update(download_message);
                 }
+                Task::none()
             }
         }
     }
@@ -49,7 +65,10 @@ impl AppState {
         row![
             column![
                 text_input("Enter URL...", &self.url_input).on_input(AppMessage::EditUrl),
-                button("Add").on_press(AppMessage::AddUrl),
+                button("Add").on_press_maybe(
+                    (self.content_type.is_some() && !self.url_input.is_empty())
+                        .then_some(AppMessage::AddUrl)
+                ),
             ],
             column(downloads).spacing(10),
         ]
@@ -58,6 +77,8 @@ impl AppState {
     }
 }
 
-pub fn main() -> iced::Result {
-    iced::run("Hedgehog", AppState::update, AppState::view)
+fn main() {
+    dotenv::dotenv().ok();
+    env_logger::init();
+    iced::run("Hedgehog", AppState::update, AppState::view).unwrap();
 }

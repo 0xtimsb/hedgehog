@@ -3,8 +3,9 @@ use iced::{
     Element, Task,
 };
 use log::debug;
+use reqwest::Url;
 
-use crate::utils::debounce::DebouncedInput;
+use crate::utils::{debounce::DebouncedInput, http::get_downloadable_content_type};
 
 #[derive(Debug, Clone)]
 pub enum UrlInputMessage {
@@ -12,6 +13,7 @@ pub enum UrlInputMessage {
     Add,
     Validated(Option<String>),
     CheckValidation(String),
+    ClipboardContent(Option<String>),
 }
 
 pub struct UrlInput {
@@ -38,7 +40,6 @@ impl UrlInput {
     pub fn update(&mut self, message: UrlInputMessage) -> Task<UrlInputMessage> {
         match message {
             UrlInputMessage::Edit(url) => {
-                // cancels previous validation request if it is still in progress (e.g. super slow network)
                 if let Some(handle) = self.validation_handle.take() {
                     handle.abort();
                 }
@@ -56,12 +57,24 @@ impl UrlInput {
             }
             UrlInputMessage::CheckValidation(url) => {
                 let (task, handle) = Task::abortable(Task::future(async move {
-                    crate::utils::http::get_downloadable_content_type(&url).await
+                    get_downloadable_content_type(&url).await
                 }));
-                // store handle as we might need to cancel it later if user starts typing again before validation is complete
                 self.validation_handle = Some(handle);
                 task.map(UrlInputMessage::Validated)
             }
+            UrlInputMessage::ClipboardContent(Some(content)) if !content.is_empty() => {
+                let url_result = Url::parse(&content);
+                if url_result.is_ok() && matches!(url_result.unwrap().scheme(), "http" | "https") {
+                    self.value = content.clone();
+                    self.is_validating = true;
+                    self.debouncer
+                        .debounce(UrlInputMessage::CheckValidation(content), |msg| msg)
+                } else {
+                    debug!("Invalid URL or scheme: {}", content);
+                    Task::none()
+                }
+            }
+            UrlInputMessage::ClipboardContent(_) => Task::none(),
             _ => Task::none(),
         }
     }

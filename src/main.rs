@@ -1,5 +1,6 @@
 use download_item::DownloadItem;
 use iced::{
+    clipboard,
     widget::{button, column, container},
     Element, Task,
 };
@@ -30,11 +31,11 @@ impl AppState {
         match message {
             AppMessage::ShowModal => {
                 self.show_modal = true;
-                Task::none()
+                clipboard::read()
+                    .map(|content| AppMessage::UrlInput(UrlInputMessage::ClipboardContent(content)))
             }
             AppMessage::HideModal => {
                 self.show_modal = false;
-                // here we don't care about cancelling task as it doesn't matter after dismissing modal
                 self.url_input.value.clear();
                 Task::none()
             }

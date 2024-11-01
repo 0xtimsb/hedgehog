@@ -1,8 +1,9 @@
 use download_item::DownloadItem;
 use iced::{
-    widget::{column, row},
+    widget::{button, column, container},
     Element, Task,
 };
+use ui::modal::modal;
 use ui::url_input::{UrlInput, UrlInputMessage};
 
 mod download_item;
@@ -13,24 +14,36 @@ mod utils;
 struct AppState {
     download_items: Vec<DownloadItem>,
     url_input: UrlInput,
+    show_modal: bool,
 }
 
 #[derive(Debug, Clone)]
 enum AppMessage {
     UrlInput(UrlInputMessage),
     DownloadItem(usize, download_item::DownloadMessage),
+    ShowModal,
+    HideModal,
 }
 
 impl AppState {
     fn update(&mut self, message: AppMessage) -> Task<AppMessage> {
         match message {
+            AppMessage::ShowModal => {
+                self.show_modal = true;
+                Task::none()
+            }
+            AppMessage::HideModal => {
+                self.show_modal = false;
+                // here we don't care about cancelling task as it doesn't matter after dismissing modal
+                self.url_input.value.clear();
+                Task::none()
+            }
             AppMessage::UrlInput(url_msg) => match url_msg {
                 UrlInputMessage::Add => {
-                    if !self.url_input.value.is_empty() {
-                        let new_item = DownloadItem::new(self.url_input.value.clone());
-                        self.download_items.push(new_item);
-                        self.url_input.value.clear();
-                    }
+                    let new_item = DownloadItem::new(self.url_input.value.clone());
+                    self.download_items.push(new_item);
+                    self.url_input.value.clear();
+                    self.show_modal = false;
                     Task::none()
                 }
                 _ => self.url_input.update(url_msg).map(AppMessage::UrlInput),
@@ -45,17 +58,24 @@ impl AppState {
     }
 
     fn view(&self) -> Element<AppMessage> {
-        let downloads = self
-            .download_items
-            .iter()
-            .enumerate()
-            .map(|(i, item)| item.view().map(move |msg| AppMessage::DownloadItem(i, msg)));
-        row![
-            self.url_input.view().map(AppMessage::UrlInput),
-            column(downloads).spacing(10),
+        let body = column![
+            button("Add Download").on_press(AppMessage::ShowModal),
+            column(
+                self.download_items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| item.view().map(move |msg| AppMessage::DownloadItem(i, msg)))
+            )
+            .spacing(10),
         ]
-        .spacing(10)
-        .into()
+        .spacing(10);
+
+        if self.show_modal {
+            let url_input = container(self.url_input.view().map(AppMessage::UrlInput));
+            modal(body, url_input, AppMessage::HideModal)
+        } else {
+            body.into()
+        }
     }
 }
 

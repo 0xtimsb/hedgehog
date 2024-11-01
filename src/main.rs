@@ -5,6 +5,7 @@ use iced::{
 };
 
 mod download_item;
+mod ui;
 mod url_input;
 mod utils;
 use url_input::{UrlInput, UrlInputMessage};

@@ -1,8 +1,10 @@
 use iced::{
-    widget::{button, column, text_input},
+    widget::{button, row, text_input},
     Element, Task,
 };
 use log::debug;
+
+use crate::ui::debounced_input::DebouncedInput;
 
 #[derive(Debug, Clone)]
 pub enum UrlInputMessage {
@@ -15,7 +17,8 @@ pub enum UrlInputMessage {
 pub struct UrlInput {
     pub value: String,
     pub content_type: Option<String>,
-    pub validation_handle: Option<iced::task::Handle>,
+    debouncer: DebouncedInput<UrlInputMessage>,
+    is_validating: bool,
 }
 
 impl Default for UrlInput {
@@ -23,7 +26,8 @@ impl Default for UrlInput {
         Self {
             value: String::new(),
             content_type: None,
-            validation_handle: None,
+            debouncer: DebouncedInput::new(500),
+            is_validating: false,
         }
     }
 }
@@ -34,19 +38,14 @@ impl UrlInput {
             UrlInputMessage::Edit(url) => {
                 self.value = url.clone();
                 self.content_type = None;
-                if let Some(handle) = &self.validation_handle {
-                    handle.abort();
-                }
-                let (task, handle) = Task::abortable(Task::future(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    UrlInputMessage::CheckValidation(url)
-                }));
-                self.validation_handle = Some(handle);
-                task
+                self.is_validating = true;
+                self.debouncer
+                    .debounce(UrlInputMessage::CheckValidation(url), |msg| msg)
             }
             UrlInputMessage::Validated(content_type) => {
                 debug!("Validated content type: {:?}", content_type);
                 self.content_type = content_type;
+                self.is_validating = false;
                 Task::none()
             }
             UrlInputMessage::CheckValidation(url) => {
@@ -61,12 +60,16 @@ impl UrlInput {
     }
 
     pub fn view(&self) -> Element<UrlInputMessage> {
-        column![
+        row![
             text_input("Enter URL...", &self.value).on_input(UrlInputMessage::Edit),
-            button("Add").on_press_maybe(
-                (self.content_type.is_some() && !self.value.is_empty())
-                    .then_some(UrlInputMessage::Add)
-            ),
+            if self.is_validating {
+                button("Validating...").into()
+            } else {
+                button("Add").on_press_maybe(
+                    (self.content_type.is_some() && !self.value.is_empty())
+                        .then_some(UrlInputMessage::Add)
+                )
+            }
         ]
         .into()
     }

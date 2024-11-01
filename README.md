@@ -8,6 +8,7 @@ note: work in progress
 
 - [ ] add download using url
   - [x] add content type validation
-  - [ ] debounce url validation check
+  - [x] debounce url validation check
+  - [ ] add loading while url is validating
   - [ ] turn input into model
   - [ ] use url from clipboard

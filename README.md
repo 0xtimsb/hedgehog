@@ -9,7 +9,7 @@ note: work in progress
 - [ ] add download using url
   - [x] add content type validation
   - [x] debounce url validation check
-  - [x] extract debounced input from url input as a separate ui component
+  - [x] extract debounced input from url input as a separate component
   - [x] add loading while url is validating
-  - [ ] turn input into model
+  - [x] cancel previous validation request if user starts typing again
   - [ ] use url from clipboard

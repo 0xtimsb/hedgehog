@@ -19,6 +19,7 @@ pub struct UrlInput {
     pub content_type: Option<String>,
     debouncer: DebouncedInput<UrlInputMessage>,
     is_validating: bool,
+    validation_handle: Option<iced::task::Handle>,
 }
 
 impl Default for UrlInput {
@@ -28,6 +29,7 @@ impl Default for UrlInput {
             content_type: None,
             debouncer: DebouncedInput::new(500),
             is_validating: false,
+            validation_handle: None,
         }
     }
 }
@@ -36,6 +38,10 @@ impl UrlInput {
     pub fn update(&mut self, message: UrlInputMessage) -> Task<UrlInputMessage> {
         match message {
             UrlInputMessage::Edit(url) => {
+                // cancels previous validation request if it is still in progress (e.g. super slow network)
+                if let Some(handle) = self.validation_handle.take() {
+                    handle.abort();
+                }
                 self.value = url.clone();
                 self.content_type = None;
                 self.is_validating = true;
@@ -49,11 +55,12 @@ impl UrlInput {
                 Task::none()
             }
             UrlInputMessage::CheckValidation(url) => {
-                debug!("Checking validation for {}", url);
-                Task::perform(
-                    async move { crate::utils::get_downloadable_content_type(&url).await },
-                    UrlInputMessage::Validated,
-                )
+                let (task, handle) = Task::abortable(Task::future(async move {
+                    crate::utils::get_downloadable_content_type(&url).await
+                }));
+                // store handle as we might need to cancel it later if user starts typing again before validation is complete
+                self.validation_handle = Some(handle);
+                task.map(UrlInputMessage::Validated)
             }
             _ => Task::none(),
         }
@@ -67,7 +74,7 @@ impl UrlInput {
             } else {
                 button("Add").on_press_maybe(
                     (self.content_type.is_some() && !self.value.is_empty())
-                        .then_some(UrlInputMessage::Add)
+                        .then_some(UrlInputMessage::Add),
                 )
             }
         ]

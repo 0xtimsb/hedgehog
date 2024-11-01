@@ -4,7 +4,7 @@ use iced::{
 };
 use log::debug;
 
-use crate::ui::debounced_input::DebouncedInput;
+use crate::utils::debounce::DebouncedInput;
 
 #[derive(Debug, Clone)]
 pub enum UrlInputMessage {
@@ -56,7 +56,7 @@ impl UrlInput {
             }
             UrlInputMessage::CheckValidation(url) => {
                 let (task, handle) = Task::abortable(Task::future(async move {
-                    crate::utils::get_downloadable_content_type(&url).await
+                    crate::utils::http::get_downloadable_content_type(&url).await
                 }));
                 // store handle as we might need to cancel it later if user starts typing again before validation is complete
                 self.validation_handle = Some(handle);

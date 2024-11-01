@@ -3,12 +3,11 @@ use iced::{
     widget::{column, row},
     Element, Task,
 };
+use ui::url_input::{UrlInput, UrlInputMessage};
 
 mod download_item;
 mod ui;
-mod url_input;
 mod utils;
-use url_input::{UrlInput, UrlInputMessage};
 
 #[derive(Default)]
 struct AppState {

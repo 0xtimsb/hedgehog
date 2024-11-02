@@ -1,12 +1,14 @@
-use download_item::DownloadItem;
+use download_item::{download, DownloadItem, DownloadMessage, DownloadStatus};
 use iced::{
     clipboard,
     widget::{button, column, container},
     Element, Task,
 };
+use rusqlite::{Connection, Result};
 use ui::modal::modal;
 use ui::url_input::{UrlInput, UrlInputMessage};
 
+mod db;
 mod download_item;
 mod ui;
 mod utils;
@@ -27,6 +29,21 @@ enum AppMessage {
 }
 
 impl AppState {
+    pub fn new(conn: &Connection) -> Result<Self> {
+        let mut downloads = db::load_downloads(conn)?;
+        downloads.iter_mut().for_each(|item| {
+            if matches!(item.status, DownloadStatus::InProgress { .. }) {
+                let _ = item.update(DownloadMessage::StartDownload);
+            }
+        });
+
+        Ok(Self {
+            download_items: downloads,
+            url_input: UrlInput::default(),
+            show_modal: false,
+        })
+    }
+
     fn update(&mut self, message: AppMessage) -> Task<AppMessage> {
         match message {
             AppMessage::ShowModal => {
@@ -41,7 +58,14 @@ impl AppState {
             }
             AppMessage::UrlInput(url_msg) => match url_msg {
                 UrlInputMessage::Add => {
-                    let new_item = DownloadItem::new(self.url_input.value.clone());
+                    let mut new_item = DownloadItem::new(self.url_input.value.clone());
+                    let _ = new_item.update(download_item::DownloadMessage::StartDownload);
+
+                    // Save to database
+                    if let Ok(conn) = Connection::open("downloads.db") {
+                        let _ = db::save_download(&conn, &new_item);
+                    }
+
                     self.download_items.push(new_item);
                     self.url_input.value.clear();
                     self.show_modal = false;
@@ -51,7 +75,11 @@ impl AppState {
             },
             AppMessage::DownloadItem(index, download_message) => {
                 if let Some(item) = self.download_items.get_mut(index) {
-                    item.update(download_message);
+                    let _ = item.update(download_message);
+                    // Update database when download status changes
+                    if let Ok(conn) = Connection::open("downloads.db") {
+                        let _ = db::save_download(&conn, item);
+                    }
                 }
                 Task::none()
             }
@@ -78,12 +106,36 @@ impl AppState {
             body.into()
         }
     }
+
+    pub fn subscription(&self) -> iced::Subscription<AppMessage> {
+        iced::Subscription::batch(self.download_items.iter().enumerate().map(|(i, item)| {
+            let download_sub = item.subscription();
+            download_sub.with(i).map(|(i, progress)| {
+                let msg = match progress.1 {
+                    Ok(download::Progress::Advanced(progress, bytes)) => {
+                        DownloadMessage::UpdateProgress(progress, bytes)
+                    }
+                    Ok(download::Progress::Finished) => DownloadMessage::CompleteDownload,
+                    Err(e) => DownloadMessage::FailDownload(e.to_string()),
+                    _ => DownloadMessage::UpdateProgress(0.0, 0),
+                };
+                AppMessage::DownloadItem(i, msg)
+            })
+        }))
+    }
 }
 
 fn main() {
     dotenv::dotenv().ok();
     env_logger::init();
+
+    let conn = db::init_db().expect("Failed to initialize database");
+
     iced::application("Hedgehog", AppState::update, AppState::view)
-        .run()
+        .subscription(AppState::subscription)
+        .run_with(move || {
+            let state = AppState::new(&conn).expect("Failed to initialize application state");
+            (state, Task::none())
+        })
         .unwrap();
 }
